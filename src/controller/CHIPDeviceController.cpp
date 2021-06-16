@@ -1141,8 +1141,9 @@ CHIP_ERROR DeviceCommissioner::SendOperationalCertificateSigningRequestCommand(D
     Callback::Cancelable * successCallback = mOpCSRResponseCallback.Cancel();
     Callback::Cancelable * failureCallback = mOnCSRFailureCallback.Cancel();
 
-    if(!device->IsCSRNonceProvided()){
-      ReturnErrorOnFailure(device->GenerateCSRNonce());
+    if (!device->IsCSRNonceProvided())
+    {
+        ReturnErrorOnFailure(device->GenerateCSRNonce());
     }
     ReturnErrorOnFailure(cluster.OpCSRRequest(successCallback, failureCallback, device->GetCSRNonce()));
     ChipLogDetail(Controller, "Sent OpCSR request, waiting for the CSR");

@@ -307,7 +307,7 @@ public:
 
     void SetActive(bool active) { mActive = active; }
 
-    bool IsCSRNonceProvided() const {return mCSRNonceProvided; }
+    bool IsCSRNonceProvided() const { return mCSRNonceProvided; }
 
     bool IsSecureConnected() const { return IsActive() && mState == ConnectionState::SecureConnected; }
 
@@ -351,9 +351,9 @@ public:
 
     CHIP_ERROR SetCSRNonce(ByteSpan csrNonce)
     {
-       memcpy(mCSRNonce, csrNonce.data(), csrNonce.size());
-       mCSRNonceProvided = true;
-       return CHIP_NO_ERROR;
+        memcpy(mCSRNonce, csrNonce.data(), csrNonce.size());
+        mCSRNonceProvided = true;
+        return CHIP_NO_ERROR;
     }
 
     ByteSpan GetCSRNonce() const { return ByteSpan(mCSRNonce, sizeof(mCSRNonce)); }
@@ -380,8 +380,8 @@ private:
 
     Inet::InetLayer * mInetLayer = nullptr;
 
-    bool mActive           = false;
-    //Should be set to true only if the commissioner provides a CSRNonce during commissioning flow.
+    bool mActive = false;
+    // Should be set to true only if the commissioner provides a CSRNonce during commissioning flow.
     bool mCSRNonceProvided = false;
     ConnectionState mState = ConnectionState::NotConnected;
 
