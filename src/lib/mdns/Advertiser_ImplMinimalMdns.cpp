@@ -280,6 +280,8 @@ CHIP_ERROR AdvertiserMinMdns::Advertise(const OperationalAdvertisingParameters &
 
     ChipLogProgress(Discovery, "CHIP minimal mDNS configured as 'Operational device'.");
 
+    AdvertiseRecords();
+
     return CHIP_NO_ERROR;
 }
 
@@ -486,6 +488,8 @@ CHIP_ERROR AdvertiserMinMdns::Advertise(const CommissionAdvertisingParameters & 
     {
         ChipLogProgress(Discovery, "CHIP minimal mDNS configured as 'Commissioner device'.");
     }
+
+    AdvertiseRecords();
 
     return CHIP_NO_ERROR;
 }
