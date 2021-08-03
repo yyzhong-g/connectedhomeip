@@ -118,6 +118,8 @@ CHIP_ERROR AdvertiseOperational()
 
     auto & mdnsAdvertiser = chip::Mdns::ServiceAdvertiser::Instance();
 
+    mdnsAdvertiser.StopPublishDevice();
+
     ChipLogProgress(Discovery, "Advertise operational node " ChipLogFormatX64 "-" ChipLogFormatX64,
                     ChipLogValueX64(advertiseParameters.GetPeerId().GetFabricId()),
                     ChipLogValueX64(advertiseParameters.GetPeerId().GetNodeId()));
