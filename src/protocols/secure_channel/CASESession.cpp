@@ -37,6 +37,7 @@
 #include <support/SafeInt.h>
 #include <support/ScopedBuffer.h>
 #include <transport/SecureSessionMgr.h>
+#include <pw_trace/trace.h>
 
 namespace chip {
 
@@ -372,6 +373,7 @@ CHIP_ERROR CASESession::HandleSigmaR1_and_SendSigmaR2(const System::PacketBuffer
 
 CHIP_ERROR CASESession::HandleSigmaR1(const System::PacketBufferHandle & msg)
 {
+    PW_TRACE_START("CASESession::HandleSigmaR1", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     uint16_t encryptionKeyId = 0;
@@ -417,11 +419,13 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::HandleSigmaR1", "Commissioning");
     return err;
 }
 
 CHIP_ERROR CASESession::SendSigmaR2()
 {
+    PW_TRACE_START("CASESession::SendSigmaR2", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     System::PacketBufferHandle msg_R2;
@@ -452,19 +456,25 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
     // Step 1
     // Fill in the random value
+    PW_TRACE_START("DRBG_get_bytes", "Commissioning");
     err = DRBG_get_bytes(msg_rand.Get(), kSigmaParamRandomNumberSize);
+    PW_TRACE_END("DRBG_get_bytes", "Commissioning");
     SuccessOrExit(err);
 
     // Step 3
     // hardcoded to use a p256keypair
+    PW_TRACE_START("mEphemeralKey.Initialize", "Commissioning");
 #ifdef ENABLE_HSM_CASE_EPHERMAL_KEY
     mEphemeralKey.SetKeyId(CASE_EPHEMERAL_KEY);
 #endif
     err = mEphemeralKey.Initialize();
+    PW_TRACE_END("mEphemeralKey.Initialize", "Commissioning");
     SuccessOrExit(err);
 
     // Step 4
+    PW_TRACE_START("mEphemeralKey.ECDH_derive_secret", "Commissioning");
     err = mEphemeralKey.ECDH_derive_secret(mRemotePubKey, mSharedSecret);
+    PW_TRACE_END("mEphemeralKey.ECDH_derive_secret", "Commissioning");
     SuccessOrExit(err);
 
     err = ComputeIPK(mConnectionState.GetLocalKeyID(), mIPK, sizeof(mIPK));
@@ -472,17 +482,22 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
     // Step 5
     {
+        PW_TRACE_START("ConstructSaltSigmaR2", "Commissioning");
         MutableByteSpan saltSpan(msg_salt.Get(), saltlen);
         err = ConstructSaltSigmaR2(ByteSpan(msg_rand.Get(), kSigmaParamRandomNumberSize), mEphemeralKey.Pubkey(), mIPK,
                                    sizeof(mIPK), saltSpan);
         SuccessOrExit(err);
+        PW_TRACE_END("ConstructSaltSigmaR2", "Commissioning");
     }
 
+    PW_TRACE_START("HKDF_SHA256", "Commissioning");
     err = mHKDF.HKDF_SHA256(mSharedSecret, mSharedSecret.Length(), msg_salt.Get(), saltlen, kKDFSR2Info, kKDFInfoLength, sr2k,
                             kAEADKeySize);
+    PW_TRACE_END("HKDF_SHA256", "Commissioning");
     SuccessOrExit(err);
 
     // Step 6
+    PW_TRACE_START("msg_r2_signed", "Commissioning");
     msg_r2_signed_len =
         static_cast<uint16_t>(sizeof(uint16_t) + mOpCredSet->GetDevOpCredLen(mTrustedRootId) + kP256_PublicKey_Length * 2);
 
@@ -498,12 +513,16 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
         VerifyOrExit(bbuf.Fit(), err = CHIP_ERROR_NO_MEMORY);
     }
+    PW_TRACE_END("msg_r2_signed", "Commissioning");
 
     // Step 7
+    PW_TRACE_START("mOpCredSet->SignMsg", "Commissioning");
     err = mOpCredSet->SignMsg(mTrustedRootId, msg_R2_Signed.Get(), msg_r2_signed_len, sigmaR2Signature);
     SuccessOrExit(err);
+    PW_TRACE_END("mOpCredSet->SignMsg", "Commissioning");
 
     // Step 8
+    PW_TRACE_START("msg_r2_signed_enc","Commissioning");
     msg_r2_signed_enc_len = sizeof(uint16_t) + mOpCredSet->GetDevOpCredLen(mTrustedRootId) + sigmaR2Signature.Length();
 
     VerifyOrExit(msg_R2_Encrypted.Alloc(msg_r2_signed_enc_len), err = CHIP_ERROR_NO_MEMORY);
@@ -516,8 +535,10 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
         VerifyOrExit(bbuf.Fit(), err = CHIP_ERROR_NO_MEMORY);
     }
+    PW_TRACE_END("msg_r2_signed_enc", "Commissioning");
 
     // Step 9
+    PW_TRACE_START("AES_CCM_encrypt", "Commissioning");
     err = AES_CCM_encrypt(msg_R2_Encrypted.Get(), msg_r2_signed_enc_len, nullptr, 0, sr2k, kAEADKeySize, kIVSR2, kIVLength,
                           msg_R2_Encrypted.Get(), tag, sizeof(tag));
     SuccessOrExit(err);
@@ -527,9 +548,11 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
     msg_R2 = System::PacketBufferHandle::New(data_len);
     VerifyOrExit(!msg_R2.IsNull(), err = CHIP_ERROR_NO_MEMORY);
+    PW_TRACE_END("AES_CCM_encrypt", "Commissioning");
 
     // Step 10
     // now construct sigmaR2
+    PW_TRACE_START("construct sigmaR2", "Commissioning");
     {
         Encoding::LittleEndian::BufferWriter bbuf(msg_R2->Start(), data_len);
 
@@ -549,6 +572,7 @@ CHIP_ERROR CASESession::SendSigmaR2()
 
     err = mCommissioningHash.AddData(msg_R2->Start(), msg_R2->DataLength());
     SuccessOrExit(err);
+    PW_TRACE_END("construct sigmaR2", "Commissioning");
 
     mNextExpectedMsg = Protocols::SecureChannel::MsgType::CASE_SigmaR3;
 
@@ -565,6 +589,7 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::SendSigmaR2", "Commissioning");
     return err;
 }
 
@@ -834,6 +859,7 @@ exit:
 
 CHIP_ERROR CASESession::HandleSigmaR3(const System::PacketBufferHandle & msg)
 {
+    PW_TRACE_START("CASESession::HandleSigmaR3", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     const uint8_t * buf = msg->Start();
@@ -876,22 +902,28 @@ CHIP_ERROR CASESession::HandleSigmaR3(const System::PacketBufferHandle & msg)
         SuccessOrExit(err);
     }
 
+    PW_TRACE_START("HKDF_SHA256", "Commissioning");
     err = mHKDF.HKDF_SHA256(mSharedSecret, mSharedSecret.Length(), msg_salt.Get(), saltlen, kKDFSR3Info, kKDFInfoLength, sr3k,
                             kAEADKeySize);
+    PW_TRACE_END("HKDF_SHA256", "Commissioning");
     SuccessOrExit(err);
 
     err = mCommissioningHash.AddData(msg->Start(), msg->DataLength());
     SuccessOrExit(err);
 
     // Step 2
+    PW_TRACE_START("AES_CCM_decrypt", "Commissioning");
     err = AES_CCM_decrypt(msg->Start(), msg->DataLength() - kTAGSize, nullptr, 0, tag, kTAGSize, sr3k, kAEADKeySize, kIVSR3,
                           kIVLength, msg->Start());
     SuccessOrExit(err);
+    PW_TRACE_END("AES_CCM_decrypt", "Commissioning");
 
     // Step 3
     // Validate initiator identity located in msg->Start()
     // Constructing responder identity
+    PW_TRACE_START("Validate_and_RetrieveResponderID", "Commissioning");
     err = Validate_and_RetrieveResponderID(&buf, remoteCredential, &remoteDeviceOpCert, remoteDeviceOpCertLen);
+    PW_TRACE_END("Validate_and_RetrieveResponderID", "Commissioning");
     SuccessOrExit(err);
 
     // Step 4
@@ -902,10 +934,14 @@ CHIP_ERROR CASESession::HandleSigmaR3(const System::PacketBufferHandle & msg)
     sigLen = msg->DataLength() - sizeof(uint16_t) - remoteDeviceOpCertLen - kTAGSize;
     {
         MutableByteSpan msg_R3_Span(msg_R3_Signed.Get(), msg_r3_signed_len);
+        PW_TRACE_START("ConstructSignedCredentials", "Commissioning");
         err = ConstructSignedCredentials(&buf, remoteDeviceOpCert, remoteDeviceOpCertLen, msg_R3_Span, sigmaR3SignedData, sigLen);
+        PW_TRACE_END("ConstructSignedCredentials", "Commissioning");
         SuccessOrExit(err);
     }
+    PW_TRACE_START("ECDSA_validate_msg_signature","Commissioning");
     err = remoteCredential.ECDSA_validate_msg_signature(msg_R3_Signed.Get(), msg_r3_signed_len, sigmaR3SignedData);
+    PW_TRACE_END("ECDSA_validate_msg_signature","Commissioning");
     SuccessOrExit(err);
 
     err = mCommissioningHash.Finish(mMessageDigest);
@@ -928,6 +964,7 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::HandleSigmaR3", "Commissioning");
     return err;
 }
 
@@ -999,6 +1036,7 @@ CHIP_ERROR CASESession::ConstructSaltSigmaR2(const ByteSpan & rand, const P256Pu
 
 CHIP_ERROR CASESession::ConstructSaltSigmaR3(const uint8_t * ipk, size_t ipkLen, MutableByteSpan & salt)
 {
+    PW_TRACE_START("CASESession::ConstructSaltSigmaR3", "Commissioning");
     uint8_t md[kSHA256_Hash_Length];
     memset(salt.data(), 0, salt.size());
     Encoding::LittleEndian::BufferWriter bbuf(salt.data(), salt.size());
@@ -1009,6 +1047,7 @@ CHIP_ERROR CASESession::ConstructSaltSigmaR3(const uint8_t * ipk, size_t ipkLen,
     ReturnErrorOnFailure(mCommissioningHash.Begin());
 
     VerifyOrReturnError(bbuf.Fit(), CHIP_ERROR_NO_MEMORY);
+    PW_TRACE_END("CASESession::ConstructSaltSigmaR3", "Commissioning");
 
     return CHIP_NO_ERROR;
 }

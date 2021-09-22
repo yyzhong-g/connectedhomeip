@@ -43,6 +43,7 @@
 #include <support/ErrorStr.h>
 #include <support/SafeInt.h>
 #include <transport/SecureSessionMgr.h>
+#include <pw_trace/trace.h>
 
 namespace chip {
 
@@ -366,6 +367,7 @@ CHIP_ERROR PASESession::SendPBKDFParamRequest()
 
 CHIP_ERROR PASESession::HandlePBKDFParamRequest(const System::PacketBufferHandle & msg)
 {
+    PW_TRACE_START("PASESession::HandlePBKDFParamRequest", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     // Request message processing
@@ -390,11 +392,13 @@ exit:
     {
         SendErrorMsg(Spake2pErrorType::kUnexpected);
     }
+    PW_TRACE_END("PASESession::HandlePBKDFParamRequest", "Commissioning");
     return err;
 }
 
 CHIP_ERROR PASESession::SendPBKDFParamResponse()
 {
+    PW_TRACE_START("PASESession::SendPBKDFParamResponse", "Commissioning");
     System::PacketBufferHandle resp;
     static_assert(CHAR_BIT == 8, "Assuming sizeof() returns octets here and for sizeof(mPoint)");
     size_t resplen = kPBKDFParamRandomNumberSize + sizeof(uint64_t) + sizeof(uint32_t) + mSaltLength;
@@ -424,8 +428,12 @@ CHIP_ERROR PASESession::SendPBKDFParamResponse()
 
     // Update commissioning hash with the pbkdf2 param response that's being sent.
     ReturnErrorOnFailure(mCommissioningHash.AddData(resp->Start(), resp->DataLength()));
+    PW_TRACE_START("SetupSpake2p", "Commissioning");
     ReturnErrorOnFailure(SetupSpake2p(mIterationCount, mSalt, mSaltLength));
+    PW_TRACE_END("SetupSpake2p", "Commissioning");
+    PW_TRACE_START("mSpake2p.ComputeL", "Commissioning");
     ReturnErrorOnFailure(mSpake2p.ComputeL(mPoint, &sizeof_point, &mPASEVerifier[1][0], kSpake2p_WS_Length));
+    PW_TRACE_END("mSpake2p.ComputeL", "Commissioning");
 
     mNextExpectedMsg = Protocols::SecureChannel::MsgType::PASE_Spake2p1;
 
@@ -433,6 +441,7 @@ CHIP_ERROR PASESession::SendPBKDFParamResponse()
                                                     SendFlags(SendMessageFlags::kExpectResponse)));
     ChipLogDetail(SecureChannel, "Sent PBKDF param response");
 
+    PW_TRACE_END("PASESession::SendPBKDFParamResponse", "Commissioning");
     return CHIP_NO_ERROR;
 }
 
@@ -513,6 +522,7 @@ CHIP_ERROR PASESession::SendMsg1()
 
 CHIP_ERROR PASESession::HandleMsg1_and_SendMsg2(const System::PacketBufferHandle & msg)
 {
+    PW_TRACE_START("PASESession::HandleMsg1_and_SendMsg2", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     uint8_t Y[kMAX_Point_Length];
@@ -533,21 +543,27 @@ CHIP_ERROR PASESession::HandleMsg1_and_SendMsg2(const System::PacketBufferHandle
     VerifyOrExit(buf != nullptr, err = CHIP_ERROR_MESSAGE_INCOMPLETE);
     VerifyOrExit(buf_len == sizeof(encryptionKeyId) + kMAX_Point_Length, err = CHIP_ERROR_INVALID_MESSAGE_LENGTH);
 
+    PW_TRACE_START("mSpake2p.BeginVerifier", "Commissioning");
     err = mSpake2p.BeginVerifier(nullptr, 0, nullptr, 0, &mPASEVerifier[0][0], kSpake2p_WS_Length, mPoint, sizeof(mPoint));
     SuccessOrExit(err);
+    PW_TRACE_END("mSpake2p.BeginVerifier", "Commissioning");
 
     encryptionKeyId = chip::Encoding::LittleEndian::Read16(buf);
     msg->ConsumeHead(sizeof(encryptionKeyId));
 
     // Pass Pa to check abort condition.
+    PW_TRACE_START("mSpake2p.ComputeRoundOne", "Commissioning");
     err = mSpake2p.ComputeRoundOne(msg->Start(), msg->DataLength(), Y, &Y_len);
     SuccessOrExit(err);
+    PW_TRACE_END("mSpake2p.ComputeRoundOne","Commissioning");
 
     ChipLogDetail(SecureChannel, "Peer assigned session key ID %d", encryptionKeyId);
     mConnectionState.SetPeerKeyID(encryptionKeyId);
 
+    PW_TRACE_START("mSpake2p.ComputeRoundTwo", "Commissioning");
     err = mSpake2p.ComputeRoundTwo(msg->Start(), msg->DataLength(), verifier, &verifier_len);
     SuccessOrExit(err);
+    PW_TRACE_END("mSpake2p.ComputeRoundTwo", "Commissioning");
 
     // Make sure our addition doesn't overflow.
     VerifyOrExit(UINTMAX_MAX - verifier_len >= Y_len, err = CHIP_ERROR_INVALID_MESSAGE_LENGTH);
@@ -578,6 +594,7 @@ exit:
     {
         SendErrorMsg(Spake2pErrorType::kUnexpected);
     }
+    PW_TRACE_END("PASESession::HandleMsg1_and_SendMsg2", "Commissioning");
     return err;
 }
 
@@ -663,6 +680,7 @@ exit:
 
 CHIP_ERROR PASESession::HandleMsg3(const System::PacketBufferHandle & msg)
 {
+    PW_TRACE_START("PASESession::HandleMsg3", "Commissioning");
     CHIP_ERROR err              = CHIP_NO_ERROR;
     const uint8_t * hash        = msg->Start();
     Spake2pErrorType spake2pErr = Spake2pErrorType::kUnexpected;
@@ -676,20 +694,25 @@ CHIP_ERROR PASESession::HandleMsg3(const System::PacketBufferHandle & msg)
     VerifyOrExit(hash != nullptr, err = CHIP_ERROR_MESSAGE_INCOMPLETE);
     VerifyOrExit(msg->DataLength() == kMAX_Hash_Length, err = CHIP_ERROR_INVALID_MESSAGE_LENGTH);
 
+    PW_TRACE_START("mSpake2p.KeyConfirm", "Commissioning");
     err = mSpake2p.KeyConfirm(hash, kMAX_Hash_Length);
     if (err != CHIP_NO_ERROR)
     {
         spake2pErr = Spake2pErrorType::kInvalidKeyConfirmation;
         SuccessOrExit(err);
     }
-
+    PW_TRACE_END("mSpake2p.KeyConfirm", "Commissioning");
+    PW_TRACE_START("mSpake2p.KeyConfirm", "Commissioning");
     err = mSpake2p.GetKeys(mKe, &mKeLen);
     SuccessOrExit(err);
+    PW_TRACE_END("mSpake2p.KeyConfirm", "Commissioning");
 
     mPairingComplete = true;
 
     // Close the exchange, as no additional messages are expected from the peer
+    PW_TRACE_START("CloseExchange", "Commissioning");
     CloseExchange();
+    PW_TRACE_END("CloseExchange", "Commissioning");
 
     // Call delegate to indicate pairing completion
     mDelegate->OnSessionEstablished();
@@ -700,6 +723,7 @@ exit:
     {
         SendErrorMsg(spake2pErr);
     }
+    PW_TRACE_END("PASESession::HandleMsg3", "Commissioning");
     return err;
 }
 

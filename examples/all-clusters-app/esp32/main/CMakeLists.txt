@@ -138,28 +138,35 @@ pw_proto_library(device_service
     pw_protobuf.common_protos
 )
 
-pw_proto_library(wifi_service
-  SOURCES
-    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service/wifi_service.proto
-  INPUTS
-    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service/wifi_service.options
-  PREFIX
-    wifi_service
-  DEPS
-    pw_protobuf.common_protos
-  STRIP_PREFIX
-    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service
-)
+#pw_proto_library(wifi_service
+#  SOURCES
+#    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service/wifi_service.proto
+#  INPUTS
+#    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service/wifi_service.options
+#  PREFIX
+#    wifi_service
+#  DEPS
+#    pw_protobuf.common_protos
+#  STRIP_PREFIX
+#    ${CHIP_ROOT}/examples/ipv6only-app/common/wifi_service
+#)
 
 target_link_libraries(${COMPONENT_LIB} PUBLIC
   button_service.nanopb_rpc
   device_service.nanopb_rpc
-  wifi_service.nanopb_rpc
+#  wifi_service.nanopb_rpc
   pw_checksum
   pw_hdlc
   pw_log
   pw_rpc.server
+  pw_trace
+  pw_tokenizer
+  pw_trace_tokenized.trace_buffer
+  pw_trace_tokenized.rpc_service
+  pw_trace_tokenized.protos.nanopb_rpc
 )
+
+#set_target_properties(${COMPONENT_LIB} PROPERTIES LINK_DEPENDS ${CHIP_ROOT}/third_party/pigweed/repo/)
 
 set_property(TARGET ${chip_lib} APPEND PROPERTY LINK_LIBRARIES ${COMPONENT_LIB})
 target_include_directories(${chip_lib} PUBLIC

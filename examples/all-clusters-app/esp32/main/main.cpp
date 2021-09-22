@@ -64,6 +64,7 @@
 #include <app/clusters/on-off-server/on-off-server.h>
 #include <app/clusters/temperature-measurement-server/temperature-measurement-server.h>
 
+#include <pw_trace/trace.h>
 #if CONFIG_ENABLE_PW_RPC
 #include "Rpc.h"
 #endif
@@ -105,6 +106,28 @@ using namespace ::chip::DeviceLayer;
 const char * TAG = "all-clusters-app";
 
 static DeviceCallbacks EchoCallbacks;
+
+struct timeval time_start;
+// Define trace time as a counter for tests.
+PW_TRACE_TIME_TYPE pw_trace_GetTraceTime()
+{
+    struct timeval time_now;
+    gettimeofday(&time_now, NULL);
+    struct timeval duration;
+    timersub(&time_now, &time_start, &duration);
+    return (uint32_t)(duration.tv_sec * 1000L) + (uint32_t)(duration.tv_usec / 1000L);
+}
+
+// Return 1 for ticks per second, as it doesn't apply to fake timer.
+size_t pw_trace_GetTraceTimeTicksPerSecond()
+{
+    return (size_t)1000;
+}
+
+void pw_trace_ResetFakeTraceTimer()
+{
+    gettimeofday(&time_start, NULL);
+}
 
 namespace {
 
@@ -576,7 +599,14 @@ public:
 
 extern "C" void app_main()
 {
+    gettimeofday(&time_start, NULL);
     ESP_LOGI(TAG, "All Clusters Demo!");
+    constexpr uint32_t token = PW_TOKENIZE_STRING("Any string literal!");
+    ESP_LOGI(TAG, "Token %u ", token);
+    PW_TRACE_SET_ENABLED(true);
+    PW_TRACE_INSTANT("test");
+    PW_TRACE_INSTANT("test");
+    PW_TRACE_INSTANT("test");
 
     /* Print chip information */
     esp_chip_info_t chip_info;

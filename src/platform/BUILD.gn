@@ -454,7 +454,10 @@ if (chip_device_platform != "none" && chip_device_platform != "external") {
         "FreeRTOS/SystemTimeSupport.cpp",
       ]
 
-      public_deps += [ "${chip_root}/src/crypto" ]
+      public_deps += [
+        "${chip_root}/src/crypto",
+        "${dir_pigweed}/pw_trace:pw_trace.facade",
+      "${dir_pigweed}/pw_trace_tokenized:pw_trace_tokenized", ]
     } else if (chip_device_platform == "k32w") {
       sources += [
         "FreeRTOS/SystemTimeSupport.cpp",

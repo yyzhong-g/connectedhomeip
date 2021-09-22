@@ -40,6 +40,7 @@
 #include <lwip/netif.h>
 
 #include <type_traits>
+#include <pw_trace/trace.h>
 
 #if !CHIP_DEVICE_CONFIG_ENABLE_WIFI_STATION
 #error "WiFi Station support must be enabled when building for ESP32"
@@ -494,6 +495,7 @@ void ConnectivityManagerImpl::_OnPlatformEvent(const ChipDeviceEvent * event)
             case WIFI_EVENT_AP_START:
                 ChipLogProgress(DeviceLayer, "WIFI_EVENT_AP_START");
                 ChangeWiFiAPState(kWiFiAPState_Active);
+                PW_TRACE_END("ConfigureWiFiAP", "Commissioning");
                 DriveAPState();
                 break;
             case WIFI_EVENT_AP_STOP:
@@ -593,11 +595,13 @@ void ConnectivityManagerImpl::DriveStationState()
         if (mWiFiStationMode != kWiFiStationMode_ApplicationControlled &&
             (mWiFiStationMode != kWiFiStationMode_Enabled || !IsWiFiStationProvisioned()))
         {
+            PW_TRACE_START("DisconnectWifi", "Commissioning");
             ChipLogProgress(DeviceLayer, "Disconnecting WiFi station interface");
             err = esp_wifi_disconnect();
             if (err != ESP_OK)
             {
                 ChipLogError(DeviceLayer, "esp_wifi_disconnect() failed: %s", chip::ErrorStr(err));
+                PW_TRACE_END("DisconnectWifi", "Commissioning");
             }
             SuccessOrExit(err);
 
@@ -638,11 +642,13 @@ void ConnectivityManagerImpl::DriveStationState()
             // time has passed since the last attempt.
             if (mLastStationConnectFailTime == 0 || now >= mLastStationConnectFailTime + mWiFiStationReconnectIntervalMS)
             {
+                PW_TRACE_START("ConnectWifi", "Commissioning");
                 ChipLogProgress(DeviceLayer, "Attempting to connect WiFi station interface");
                 err = esp_wifi_connect();
                 if (err != ESP_OK)
                 {
                     ChipLogError(DeviceLayer, "esp_wifi_connect() failed: %s", chip::ErrorStr(err));
+                    PW_TRACE_END("ConnectWifi", "Commissioning");
                 }
                 SuccessOrExit(err);
 
@@ -689,6 +695,7 @@ void ConnectivityManagerImpl::OnStationConnected()
     PlatformMgr().PostEvent(&event);
 
     UpdateInternetConnectivityState();
+    PW_TRACE_END("ConnectWifi", "Commissioning");
 }
 
 void ConnectivityManagerImpl::OnStationDisconnected()
@@ -702,6 +709,7 @@ void ConnectivityManagerImpl::OnStationDisconnected()
     PlatformMgr().PostEvent(&event);
 
     UpdateInternetConnectivityState();
+    PW_TRACE_END("DisconnectWifi", "Commissioning");
 }
 
 void ConnectivityManagerImpl::ChangeWiFiStationState(WiFiStationState newState)
@@ -860,6 +868,7 @@ exit:
 
 CHIP_ERROR ConnectivityManagerImpl::ConfigureWiFiAP()
 {
+    PW_TRACE_START("ConfigureWiFiAP", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
     wifi_config_t wifiConfig;
 
