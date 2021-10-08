@@ -40,6 +40,7 @@
 #include <platform/CHIPDeviceLayer.h>
 #include <string.h>
 #include <transport/FabricTable.h>
+#include <pw_trace/trace.h>
 
 using namespace chip;
 using namespace ::chip::DeviceLayer;
@@ -388,6 +389,7 @@ bool emberAfOperationalCredentialsClusterAddNOCCallback(EndpointId endpoint, app
                                                         ByteSpan ICACValue, ByteSpan IPKValue, NodeId adminNodeId,
                                                         uint16_t adminVendorId)
 {
+    PW_TRACE_START("OperationalCredentialsClusterAddOpCert", "Commissioning");
     EmberAfNodeOperationalCertStatus nocResponse = EMBER_ZCL_NODE_OPERATIONAL_CERT_STATUS_SUCCESS;
 
     CHIP_ERROR err          = CHIP_NO_ERROR;
@@ -421,6 +423,7 @@ exit:
     {
         emberAfPrintln(EMBER_AF_PRINT_DEBUG, "OpCreds: Failed AddNOC request. Status %d", nocResponse);
     }
+    PW_TRACE_END("OperationalCredentialsClusterAddOpCert", "Commissioning");
 
     return true;
 }
@@ -468,6 +471,7 @@ exit:
 bool emberAfOperationalCredentialsClusterOpCSRRequestCallback(EndpointId endpoint, app::CommandHandler * commandObj,
                                                               ByteSpan CSRNonce)
 {
+    PW_TRACE_START("OperationalCredentialsClusterOpCSRRequest", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     Platform::ScopedMemoryBuffer<uint8_t> csr;
@@ -529,6 +533,7 @@ exit:
         emberAfPrintln(EMBER_AF_PRINT_DEBUG, "OpCreds: Failed OpCSRRequest: %s", ErrorStr(err));
         emberAfSendImmediateDefaultResponse(EMBER_ZCL_STATUS_FAILURE);
     }
+    PW_TRACE_END("OperationalCredentialsClusterOpCSRRequest", "Commissioning");
 
     return true;
 }
@@ -544,6 +549,7 @@ bool emberAfOperationalCredentialsClusterUpdateOpCertCallback(EndpointId endpoin
 bool emberAfOperationalCredentialsClusterAddTrustedRootCertificateCallback(EndpointId endpoint, app::CommandHandler * commandObj,
                                                                            ByteSpan RootCertificate)
 {
+    PW_TRACE_START("OperationalCredentialsClusterAddTrustedRootCertificate", "Commissioning");
     EmberAfStatus status = EMBER_ZCL_STATUS_SUCCESS;
 
     emberAfPrintln(EMBER_AF_PRINT_DEBUG, "OpCreds: commissioner has added a trusted root Cert");
@@ -557,6 +563,7 @@ exit:
         gFabricBeingCommissioned.Reset();
         emberAfPrintln(EMBER_AF_PRINT_DEBUG, "OpCreds: Failed AddTrustedRootCert request.");
     }
+    PW_TRACE_END("OperationalCredentialsClusterAddTrustedRootCertificate", "Commissioning");
 
     return true;
 }

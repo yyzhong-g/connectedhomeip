@@ -38,6 +38,7 @@
 #include <protocols/Protocols.h>
 #include <system/TLVPacketBufferBackingStore.h>
 #include <transport/SecureSessionMgr.h>
+#include <pw_trace/trace.h>
 
 namespace chip {
 
@@ -375,6 +376,7 @@ CHIP_ERROR CASESession::HandleSigmaR1_and_SendSigmaR2(System::PacketBufferHandle
 
 CHIP_ERROR CASESession::HandleSigmaR1(System::PacketBufferHandle && msg)
 {
+    PW_TRACE_START("CASESession::HandleSigmaR1", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
     System::PacketBufferTLVReader tlvReader;
     TLV::TLVType containerType = TLV::kTLVType_Structure;
@@ -431,11 +433,13 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::HandleSigmaR1", "Commissioning");
     return err;
 }
 
 CHIP_ERROR CASESession::SendSigmaR2()
 {
+    PW_TRACE_START("CASESession::SendSigmaR2", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     System::PacketBufferHandle msg_R2;
@@ -466,50 +470,68 @@ CHIP_ERROR CASESession::SendSigmaR2()
     VerifyOrExit(!mTrustedRootId.empty(), err = CHIP_ERROR_INTERNAL);
 
     // Fill in the random value
+    PW_TRACE_START("DRBG_get_bytes", "Commissioning");
     err = DRBG_get_bytes(&msg_rand[0], sizeof(msg_rand));
+    PW_TRACE_END("DRBG_get_bytes", "Commissioning");
     SuccessOrExit(err);
 
     // Generate an ephemeral keypair
+    PW_TRACE_START("mEphemeralKey.Initialize", "Commissioning");
 #ifdef ENABLE_HSM_CASE_EPHEMERAL_KEY
     mEphemeralKey.SetKeyId(CASE_EPHEMERAL_KEY);
 #endif
     err = mEphemeralKey.Initialize();
+    PW_TRACE_END("mEphemeralKey.Initialize", "Commissioning");
     SuccessOrExit(err);
 
     // Generate a Shared Secret
+    PW_TRACE_START("mEphemeralKey.ECDH_derive_secret", "Commissioning");
     err = mEphemeralKey.ECDH_derive_secret(mRemotePubKey, mSharedSecret);
+    PW_TRACE_END("mEphemeralKey.ECDH_derive_secret", "Commissioning");
     SuccessOrExit(err);
 
     {
+        PW_TRACE_START("ConstructSaltSigmaR2", "Commissioning");
         MutableByteSpan saltSpan(msg_salt);
         err = ConstructSaltSigmaR2(ByteSpan(msg_rand), mEphemeralKey.Pubkey(), ByteSpan(mIPK), saltSpan);
+        PW_TRACE_END("ConstructSaltSigmaR2", "Commissioning");
         SuccessOrExit(err);
 
+        PW_TRACE_START("HKDF_SHA256", "Commissioning");
         HKDF_sha_crypto mHKDF;
         err = mHKDF.HKDF_SHA256(mSharedSecret, mSharedSecret.Length(), saltSpan.data(), saltSpan.size(), kKDFSR2Info,
                                 kKDFInfoLength, sr2k, kAEADKeySize);
+        PW_TRACE_END("HKDF_SHA256", "Commissioning");
         SuccessOrExit(err);
     }
 
     // Construct Sigma2 TBS Data
+    PW_TRACE_START("msg_r2_signed.Alloc", "Commissioning");
     msg_r2_signed_len = EstimateTLVStructOverhead(nocCert.size() + icaCert.size() + kP256_PublicKey_Length * 2, 4);
 
     VerifyOrExit(msg_R2_Signed.Alloc(msg_r2_signed_len), err = CHIP_ERROR_NO_MEMORY);
 
     SuccessOrExit(err = ConstructTBSData(nocCert, icaCert, ByteSpan(mEphemeralKey.Pubkey(), mEphemeralKey.Pubkey().Length()),
                                          ByteSpan(mRemotePubKey, mRemotePubKey.Length()), msg_R2_Signed.Get(), msg_r2_signed_len));
+    PW_TRACE_END("msg_r2_signed.Alloc", "Commissioning");
+
 
     // Generate a Signature
+    PW_TRACE_START("ECDSA_sign_msg", "Commissioning");
     VerifyOrExit(mFabricInfo->GetOperationalKey() != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
     err = mFabricInfo->GetOperationalKey()->ECDSA_sign_msg(msg_R2_Signed.Get(), msg_r2_signed_len, tbsData2Signature);
     SuccessOrExit(err);
+    PW_TRACE_END("ECDSA_sign_msg", "Commissioning");
 
     // Construct Sigma2 TBE Data
+    PW_TRACE_START("msg_R2_Encrypted.Alloc", "Commissioning");
     msg_r2_signed_enc_len = EstimateTLVStructOverhead(nocCert.size() + icaCert.size() + tbsData2Signature.Length(), 3);
+    PW_TRACE_END("msg_R2_Encrypted.Alloc", "Commissioning");
 
     VerifyOrExit(msg_R2_Encrypted.Alloc(msg_r2_signed_enc_len + kTAGSize), err = CHIP_ERROR_NO_MEMORY);
 
     {
+        PW_TRACE_START("tlvWriter", "Commissioning");
         TLV::TLVWriter tlvWriter;
         TLV::TLVType outerContainerType = TLV::kTLVType_NotSpecified;
 
@@ -525,14 +547,18 @@ CHIP_ERROR CASESession::SendSigmaR2()
         SuccessOrExit(err = tlvWriter.EndContainer(outerContainerType));
         SuccessOrExit(err = tlvWriter.Finalize());
         msg_r2_signed_enc_len = static_cast<size_t>(tlvWriter.GetLengthWritten());
+        PW_TRACE_END("tlvWriter", "Commissioning");
     }
 
     // Generate the encrypted data blob
+    PW_TRACE_START("AES_CCM_encrypt", "Commissioning");
     err = AES_CCM_encrypt(msg_R2_Encrypted.Get(), msg_r2_signed_enc_len, nullptr, 0, sr2k, kAEADKeySize, kTBEData2_Nonce,
                           kTBEDataNonceLength, msg_R2_Encrypted.Get(), msg_R2_Encrypted.Get() + msg_r2_signed_enc_len, kTAGSize);
+     PW_TRACE_END("AES_CCM_encrypt", "Commissioning");
     SuccessOrExit(err);
 
     // Construct Sigma2 Msg
+    PW_TRACE_START("construct sigmaR2", "Commissioning");
     data_len = EstimateTLVStructOverhead(
         kSigmaParamRandomNumberSize + sizeof(uint16_t) + kP256_PublicKey_Length + msg_r2_signed_enc_len + kTAGSize, 4);
 
@@ -556,6 +582,8 @@ CHIP_ERROR CASESession::SendSigmaR2()
     }
 
     err = mCommissioningHash.AddData(ByteSpan{ msg_R2->Start(), msg_R2->DataLength() });
+    PW_TRACE_END("construct sigmaR2", "Commissioning");
+
     SuccessOrExit(err);
 
     mNextExpectedMsg = Protocols::SecureChannel::MsgType::CASE_SigmaR3;
@@ -573,6 +601,7 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::SendSigmaR2", "Commissioning");
     return err;
 }
 
@@ -862,6 +891,7 @@ exit:
 
 CHIP_ERROR CASESession::HandleSigmaR3(System::PacketBufferHandle && msg)
 {
+    PW_TRACE_START("CASESession::HandleSigmaR3", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
     MutableByteSpan messageDigestSpan(mMessageDigest);
     System::PacketBufferTLVReader tlvReader;
@@ -909,19 +939,24 @@ CHIP_ERROR CASESession::HandleSigmaR3(System::PacketBufferHandle && msg)
 
     // Step 1
     {
+        PW_TRACE_START("ConstructSaltSigmaR3", "Commissioning");
         MutableByteSpan saltSpan(msg_salt);
         err = ConstructSaltSigmaR3(ByteSpan(mIPK), saltSpan);
+        PW_TRACE_END("ConstructSaltSigmaR3", "Commissioning");
         SuccessOrExit(err);
 
+        PW_TRACE_START("HKDF_SHA256", "Commissioning");
         HKDF_sha_crypto mHKDF;
         err = mHKDF.HKDF_SHA256(mSharedSecret, mSharedSecret.Length(), saltSpan.data(), saltSpan.size(), kKDFSR3Info,
                                 kKDFInfoLength, sr3k, kAEADKeySize);
+        PW_TRACE_END("HKDF_SHA256", "Commissioning");
         SuccessOrExit(err);
     }
 
     SuccessOrExit(err = mCommissioningHash.AddData(ByteSpan{ buf, bufLen }));
 
     // Step 2 - Decrypt data blob
+    PW_TRACE_START("AES_CCM_decrypt", "Commissioning");
     SuccessOrExit(err = AES_CCM_decrypt(msg_R3_Encrypted.Get(), msg_r3_encrypted_len, nullptr, 0,
                                         msg_R3_Encrypted.Get() + msg_r3_encrypted_len, kTAGSize, sr3k, kAEADKeySize,
                                         kTBEData3_Nonce, kTBEDataNonceLength, msg_R3_Encrypted.Get()));
@@ -941,13 +976,17 @@ CHIP_ERROR CASESession::HandleSigmaR3(System::PacketBufferHandle && msg)
         SuccessOrExit(err = decryptedDataTlvReader.Get(initiatorICAC));
         SuccessOrExit(err = decryptedDataTlvReader.Next(TLV::kTLVType_ByteString, TLV::ContextTag(kTag_TBEData_Signature)));
     }
+    PW_TRACE_END("AES_CCM_decrypt", "Commissioning");
 
     // Step 5/6
     // Validate initiator identity located in msg->Start()
     // Constructing responder identity
+    PW_TRACE_START("Validate_and_RetrieveResponderID", "Commissioning");
     SuccessOrExit(err = Validate_and_RetrieveResponderID(initiatorNOC, initiatorICAC, remoteCredential));
+    PW_TRACE_END("Validate_and_RetrieveResponderID", "Commissioning");
 
     // Step 4 - Construct SigmaR3 TBS Data
+    PW_TRACE_START("msg_R3_Signed", "Commissioning");
     msg_r3_signed_len =
         EstimateTLVStructOverhead(sizeof(uint16_t) + initiatorNOC.size() + initiatorICAC.size() + kP256_PublicKey_Length * 2, 4);
 
@@ -961,6 +1000,7 @@ CHIP_ERROR CASESession::HandleSigmaR3(System::PacketBufferHandle && msg)
     VerifyOrExit(tbsData3Signature.Capacity() >= decryptedDataTlvReader.GetLength(), err = CHIP_ERROR_INVALID_TLV_ELEMENT);
     tbsData3Signature.SetLength(decryptedDataTlvReader.GetLength());
     SuccessOrExit(err = decryptedDataTlvReader.GetBytes(tbsData3Signature, tbsData3Signature.Length()));
+    PW_TRACE_END("msg_R3_Signed", "Commissioning");
 
     // TODO - Validate message signature prior to validating the received operational credentials.
     //        The op cert check requires traversal of cert chain, that is a more expensive operation.
@@ -968,7 +1008,9 @@ CHIP_ERROR CASESession::HandleSigmaR3(System::PacketBufferHandle && msg)
     //        current flow of code, a malicious node can trigger a DoS style attack on the device.
     //        The same change should be made in SigmaR2 processing.
     // Step 7 - Validate Signature
+    PW_TRACE_START("ECDSA_validate_msg_signature","Commissioning");
     SuccessOrExit(err = remoteCredential.ECDSA_validate_msg_signature(msg_R3_Signed.Get(), msg_r3_signed_len, tbsData3Signature));
+    PW_TRACE_END("ECDSA_validate_msg_signature","Commissioning");
 
     SuccessOrExit(err = mCommissioningHash.Finish(messageDigestSpan));
 
@@ -989,6 +1031,7 @@ exit:
     {
         SendErrorMsg(SigmaErrorType::kUnexpected);
     }
+    PW_TRACE_END("CASESession::HandleSigmaR3", "Commissioning");
     return err;
 }
 

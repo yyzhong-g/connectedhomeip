@@ -29,6 +29,7 @@
 #include <app-common/zap-generated/enums.h>
 #include <app/CommandHandler.h>
 #include <app/util/af.h>
+#include <pw_trace/trace.h>
 
 using namespace chip;
 
@@ -36,30 +37,36 @@ bool emberAfNetworkCommissioningClusterAddThreadNetworkCallback(EndpointId endpo
                                                                 ByteSpan operationalDataset, uint64_t breadcrumb,
                                                                 uint32_t timeoutMs)
 {
+    PW_TRACE_START("NetworkCommissioningClusterAddThreadNetwork", "Commissioning");
     EmberAfNetworkCommissioningError err = app::clusters::NetworkCommissioning::OnAddThreadNetworkCommandCallbackInternal(
         nullptr, emberAfCurrentEndpoint(), operationalDataset, breadcrumb, timeoutMs);
     emberAfSendImmediateDefaultResponse(err == EMBER_ZCL_NETWORK_COMMISSIONING_ERROR_SUCCESS ? EMBER_ZCL_STATUS_SUCCESS
                                                                                              : EMBER_ZCL_STATUS_FAILURE);
+    PW_TRACE_END("NetworkCommissioningClusterAddThreadNetwork", "Commissioning");
     return true;
 }
 
 bool emberAfNetworkCommissioningClusterAddWiFiNetworkCallback(EndpointId endpoint, app::CommandHandler * commandObj, ByteSpan ssid,
                                                               ByteSpan credentials, uint64_t breadcrumb, uint32_t timeoutMs)
 {
+    PW_TRACE_START("NetworkCommissioningClusterAddWiFiNetwork", "Commissioning");
     EmberAfNetworkCommissioningError err = app::clusters::NetworkCommissioning::OnAddWiFiNetworkCommandCallbackInternal(
         nullptr, emberAfCurrentEndpoint(), ssid, credentials, breadcrumb, timeoutMs);
     emberAfSendImmediateDefaultResponse(err == EMBER_ZCL_NETWORK_COMMISSIONING_ERROR_SUCCESS ? EMBER_ZCL_STATUS_SUCCESS
                                                                                              : EMBER_ZCL_STATUS_FAILURE);
+    PW_TRACE_END("NetworkCommissioningClusterAddWiFiNetwork", "Commissioning");
     return true;
 }
 
 bool emberAfNetworkCommissioningClusterEnableNetworkCallback(EndpointId endpoint, app::CommandHandler * commandObj,
                                                              ByteSpan networkID, uint64_t breadcrumb, uint32_t timeoutMs)
 {
+    PW_TRACE_START("NetworkCommissioningClusterEnableNetwork", "Commissioning");
     EmberAfNetworkCommissioningError err = app::clusters::NetworkCommissioning::OnEnableNetworkCommandCallbackInternal(
         nullptr, emberAfCurrentEndpoint(), networkID, breadcrumb, timeoutMs);
     emberAfSendImmediateDefaultResponse(err == EMBER_ZCL_NETWORK_COMMISSIONING_ERROR_SUCCESS ? EMBER_ZCL_STATUS_SUCCESS
                                                                                              : EMBER_ZCL_STATUS_FAILURE);
+    PW_TRACE_END("NetworkCommissioningClusterEnableNetwork", "Commissioning");
     return true;
 }
 

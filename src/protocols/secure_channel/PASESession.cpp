@@ -46,6 +46,7 @@
 #include <setup_payload/SetupPayload.h>
 #include <system/TLVPacketBufferBackingStore.h>
 #include <transport/SecureSessionMgr.h>
+#include <pw_trace/trace.h>
 
 namespace chip {
 
@@ -383,6 +384,7 @@ CHIP_ERROR PASESession::SendPBKDFParamRequest()
 
 CHIP_ERROR PASESession::HandlePBKDFParamRequest(System::PacketBufferHandle && msg)
 {
+    PW_TRACE_START("PASESession::HandlePBKDFParamRequest", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     System::PacketBufferTLVReader tlvReader;
@@ -433,11 +435,13 @@ exit:
     {
         SendStatusReport(kProtocolCodeInvalidParam);
     }
+    PW_TRACE_END("PASESession::HandlePBKDFParamRequest", "Commissioning");
     return err;
 }
 
 CHIP_ERROR PASESession::SendPBKDFParamResponse(ByteSpan initiatorRandom, bool initiatorHasPBKDFParams)
 {
+    PW_TRACE_START("PASESession::SendPBKDFParamResponse", "Commissioning");
     ReturnErrorOnFailure(DRBG_get_bytes(mPBKDFLocalRandomData, sizeof(mPBKDFLocalRandomData)));
 
     const size_t max_msg_len = EstimateTLVStructOverhead(
@@ -468,11 +472,17 @@ CHIP_ERROR PASESession::SendPBKDFParamResponse(ByteSpan initiatorRandom, bool in
     ReturnErrorOnFailure(tlvWriter.Finalize(&resp));
 
     // Update commissioning hash with the pbkdf2 param response that's being sent.
+    PW_TRACE_START("mCommissioningHash.AddData", "Commissioning");
     ReturnErrorOnFailure(mCommissioningHash.AddData(ByteSpan{ resp->Start(), resp->DataLength() }));
+    PW_TRACE_END("mCommissioningHash.AddData", "Commissioning");
+    PW_TRACE_START("SetupSpake2p", "Commissioning");
     ReturnErrorOnFailure(SetupSpake2p(mIterationCount, ByteSpan(mSalt, mSaltLength)));
+    PW_TRACE_END("SetupSpake2p", "Commissioning");
 
     size_t sizeof_point = sizeof(mPoint);
+    PW_TRACE_START("mSpake2p.ComputeL", "Commissioning");
     ReturnErrorOnFailure(mSpake2p.ComputeL(mPoint, &sizeof_point, mPASEVerifier.mL, kSpake2p_WS_Length));
+    PW_TRACE_END("mSpake2p.ComputeL", "Commissioning");
 
     mNextExpectedMsg = MsgType::PASE_Pake1;
 
@@ -480,6 +490,7 @@ CHIP_ERROR PASESession::SendPBKDFParamResponse(ByteSpan initiatorRandom, bool in
         mExchangeCtxt->SendMessage(MsgType::PBKDFParamResponse, std::move(resp), SendFlags(SendMessageFlags::kExpectResponse)));
     ChipLogDetail(SecureChannel, "Sent PBKDF param response");
 
+    PW_TRACE_START("PASESession::SendPBKDFParamResponse", "Commissioning");
     return CHIP_NO_ERROR;
 }
 
@@ -597,6 +608,7 @@ CHIP_ERROR PASESession::SendMsg1()
 
 CHIP_ERROR PASESession::HandleMsg1_and_SendMsg2(System::PacketBufferHandle && msg1)
 {
+    PW_TRACE_START("PASESession::HandleMsg1_and_SendMsg2", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     uint8_t Y[kMAX_Point_Length];
@@ -621,12 +633,18 @@ CHIP_ERROR PASESession::HandleMsg1_and_SendMsg2(System::PacketBufferHandle && ms
     VerifyOrExit(TLV::TagNumFromTag(tlvReader.GetTag()) == 1, err = CHIP_ERROR_INVALID_TLV_TAG);
     X_len = tlvReader.GetLength();
     SuccessOrExit(err = tlvReader.GetDataPtr(X));
+    PW_TRACE_START("mSpake2p.BeginVerifier", "Commissioning");
     SuccessOrExit(
         err = mSpake2p.BeginVerifier(nullptr, 0, nullptr, 0, mPASEVerifier.mW0, kSpake2p_WS_Length, mPoint, sizeof(mPoint)));
+    PW_TRACE_END("mSpake2p.BeginVerifier", "Commissioning");
 
+    PW_TRACE_START("mSpake2p.ComputeRoundOne", "Commissioning");
     SuccessOrExit(err = mSpake2p.ComputeRoundOne(X, X_len, Y, &Y_len));
     VerifyOrReturnError(Y_len == sizeof(Y), CHIP_ERROR_INTERNAL);
+    PW_TRACE_END("mSpake2p.ComputeRoundOne", "Commissioning");
+    PW_TRACE_START("mSpake2p.ComputeRoundTwo", "Commissioning");
     SuccessOrExit(err = mSpake2p.ComputeRoundTwo(X, X_len, verifier, &verifier_len));
+    PW_TRACE_END("mSpake2p.ComputeRoundTwo", "Commissioning");
     msg1 = nullptr;
 
     {
@@ -661,6 +679,7 @@ exit:
     {
         SendStatusReport(kProtocolCodeInvalidParam);
     }
+    PW_TRACE_END("PASESession::HandleMsg1_and_SendMsg2", "Commissioning");
     return err;
 }
 
@@ -741,6 +760,7 @@ exit:
 
 CHIP_ERROR PASESession::HandleMsg3(System::PacketBufferHandle && msg)
 {
+    PW_TRACE_START("PASESession::HandleMsg3", "Commissioning");
     CHIP_ERROR err = CHIP_NO_ERROR;
 
     ChipLogDetail(SecureChannel, "Received spake2p msg3");
@@ -765,8 +785,12 @@ CHIP_ERROR PASESession::HandleMsg3(System::PacketBufferHandle && msg)
 
     VerifyOrExit(peer_verifier_len == kMAX_Hash_Length, err = CHIP_ERROR_INVALID_MESSAGE_LENGTH);
 
+    PW_TRACE_START("mSpake2p.KeyConfirm", "Commissioning");
     SuccessOrExit(err = mSpake2p.KeyConfirm(peer_verifier, peer_verifier_len));
+    PW_TRACE_END("mSpake2p.KeyConfirm", "Commissioning");
+    PW_TRACE_START("mSpake2p.KeyConfirm", "Commissioning");
     SuccessOrExit(err = mSpake2p.GetKeys(mKe, &mKeLen));
+    PW_TRACE_END("mSpake2p.KeyConfirm", "Commissioning");
 
     // Send confirmation to peer that we succeeded so they can start using the session.
     SendStatusReport(kProtocolCodeSuccess);
@@ -785,6 +809,7 @@ exit:
     {
         SendStatusReport(kProtocolCodeInvalidParam);
     }
+    PW_TRACE_END("PASESession::HandleMsg3", "Commissioning");
     return err;
 }
 

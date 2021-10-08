@@ -40,6 +40,7 @@
 #include <lwip/netif.h>
 
 #include <type_traits>
+#include <pw_trace/trace.h>
 
 #if !CHIP_DEVICE_CONFIG_ENABLE_WIFI_STATION
 #error "WiFi Station support must be enabled when building for ESP32"
@@ -580,10 +581,12 @@ void ConnectivityManagerImpl::DriveStationState()
             (mWiFiStationMode != kWiFiStationMode_Enabled || !IsWiFiStationProvisioned()))
         {
             ChipLogProgress(DeviceLayer, "Disconnecting WiFi station interface");
+            PW_TRACE_START("DisconnectWifi", "Commissioning");
             esp_err_t err = esp_wifi_disconnect();
             if (err != ESP_OK)
             {
                 ChipLogError(DeviceLayer, "esp_wifi_disconnect() failed: %s", esp_err_to_name(err));
+                PW_TRACE_END("DisconnectWifi", "Commissioning");
                 return;
             }
 
@@ -625,10 +628,12 @@ void ConnectivityManagerImpl::DriveStationState()
             if (mLastStationConnectFailTime == 0 || now >= mLastStationConnectFailTime + mWiFiStationReconnectIntervalMS)
             {
                 ChipLogProgress(DeviceLayer, "Attempting to connect WiFi station interface");
+                PW_TRACE_START("ConnectWifi", "Commissioning");
                 esp_err_t err = esp_wifi_connect();
                 if (err != ESP_OK)
                 {
                     ChipLogError(DeviceLayer, "esp_wifi_connect() failed: %s", esp_err_to_name(err));
+                    PW_TRACE_END("ConnectWifi", "Commissioning");
                     return;
                 }
 
@@ -670,6 +675,7 @@ void ConnectivityManagerImpl::OnStationConnected()
     PlatformMgr().PostEventOrDie(&event);
 
     UpdateInternetConnectivityState();
+    PW_TRACE_END("ConnectWifi", "Commissioning");
 }
 
 void ConnectivityManagerImpl::OnStationDisconnected()
@@ -683,6 +689,7 @@ void ConnectivityManagerImpl::OnStationDisconnected()
     PlatformMgr().PostEventOrDie(&event);
 
     UpdateInternetConnectivityState();
+    PW_TRACE_END("DisconnectWifi", "Commissioning");
 }
 
 void ConnectivityManagerImpl::ChangeWiFiStationState(WiFiStationState newState)

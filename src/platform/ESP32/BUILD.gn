@@ -15,6 +15,7 @@
 import("//build_overrides/chip.gni")
 
 import("${chip_root}/src/platform/device.gni")
+import("//build_overrides/pigweed.gni")
 
 assert(chip_device_platform == "esp32")
 
@@ -50,6 +51,8 @@ static_library("ESP32") {
   public_deps = [
     "${chip_root}/src/crypto",
     "${chip_root}/src/platform:platform_base",
+    "${dir_pigweed}/pw_trace:pw_trace.facade",
+    "${dir_pigweed}/pw_trace_tokenized:pw_trace_tokenized",
   ]
   if (chip_enable_openthread) {
     sources += [
