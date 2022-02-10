@@ -12,20 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build_overrides/chip.gni")
 import("//build_overrides/pigweed.gni")
+import("//build_overrides/perfetto.gni")
 
 declare_args() {
   chip_build_pw_trace_lib = false
+  chip_build_perfetto_trace_lib = false
 }
 
-config("config") {
-  defines = [ "PW_TRACE_BACKEND_SET" ]
+config("pw_trace_config") {
+  defines = ["PW_TRACE_BACKEND_SET"]
+}
+
+config("perfetto_trace_config") {
+  defines = [ "USE_PERFETTO_TRACING" ]
+  include_dirs = [
+    "${perfetto_root_path}/include",
+    "${perfetto_root_path}/protos",
+  ]
 }
 
 source_set("trace") {
-  sources = [ "trace.h" ]
+  sources = [
+    "trace.cpp",
+    "trace.h",
+  ]
   if (chip_build_pw_trace_lib) {
-    public_configs = [ ":config" ]
+    public_configs = [ ":pw_trace_config" ]
     public_deps = [ "${dir_pigweed}/pw_trace" ]
+  } else if (chip_build_perfetto_trace_lib) {
+    public_configs = [ ":perfetto_trace_config" ]
+    public_deps = [ "${perfetto_root_path}:libperfetto_client_experimental" ]
   }
+
 }

@@ -17,6 +17,12 @@
 
 #pragma once
 
+namespace chip {
+
+void InitializeTracing();
+
+}  // namespace chip
+
 #if defined(PW_TRACE_BACKEND_SET) && PW_TRACE_BACKEND_SET
 
 #include <pw_trace/trace.h>
@@ -37,6 +43,15 @@
 #define TRACE_EVENT_SCOPE_FLAG(...) PW_TRACE_SCOPE_FLAG(__VA_ARGS__)
 #define TRACE_EVENT_FUNCTION(...) PW_TRACE_FUNCTION(__VA_ARGS__)
 #define TRACE_EVENT_FUNCTION_FLAG(...) PW_TRACE_FUNCTION_FLAG(__VA_ARGS__)
+
+#elif defined(USE_PERFETTO_TRACING) && USE_PERFETTO_TRACING
+
+#include "perfetto/tracing.h"
+
+PERFETTO_DEFINE_CATEGORIES(perfetto::Category("Matter").SetDescription(
+    "Trace events Matter platform"));
+
+#define TRACE_EVENT_SCOPE(NAME, GROUP) TRACE_EVENT("Matter", NAME)
 
 #else // defined(PW_TRACE_BACKEND_SET) && PW_TRACE_BACKEND_SET
 
